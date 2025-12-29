@@ -30,6 +30,7 @@
 //!
 
 use crate::component::ComponentCommand;
+use crate::icons::IconSubcommand;
 use crate::{dx_build_info::GIT_COMMIT_HASH_SHORT, serve::ServeUpdate, Cli, Commands, Verbosity};
 use crate::{BundleFormat, CliSettings, Workspace};
 use anyhow::{bail, Context, Error, Result};
@@ -945,6 +946,45 @@ impl TraceController {
                 ComponentCommand::Clean => ("components clean".to_string(), json!({})),
                 ComponentCommand::Schema => ("components schema".to_string(), json!({})),
             },
+            Commands::Icons(cmd) => match &cmd.command {
+                Some(IconSubcommand::Add { icons, force }) => (
+                    "icons add".to_string(),
+                    json!({
+                        "icons": icons,
+                        "force": force,
+                    })
+                ),
+                Some(IconSubcommand::Remove { icons }) => (
+                    "icons remove".to_string(),
+                    json!({
+                        "icons": icons,
+                    })
+                ),
+                None => ("icons".to_string(), json!({})),
+                /*IconsCommand::Add {
+                    icons,
+                    force
+                } => (
+                    "icons add".to_string(),
+                    json!({
+                        "icons": icons,
+                        "force": force,
+                    })
+                ),
+                IconsCommand::Convert { paths } => (
+                    "icons convert".to_string(),
+                    json!({
+                        "paths": paths,
+                    })
+                ),
+                IconsCommand::Remove { icons } => (
+                    "icons remove".to_string(),
+                    json!({
+                        "icons": icons,
+                    })
+                ),
+                IconsCommand::Update => ("icons update".to_string(), json!({})),*/
+            }
         }
     }
 

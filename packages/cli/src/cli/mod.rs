@@ -8,6 +8,7 @@ pub(crate) mod config;
 pub(crate) mod create;
 pub(crate) mod doctor;
 pub(crate) mod hotpatch;
+pub(crate) mod icons;
 pub(crate) mod init;
 pub(crate) mod link;
 pub(crate) mod platform_override;
@@ -120,6 +121,11 @@ pub(crate) enum Commands {
     #[clap(name = "components")]
     #[clap(subcommand)]
     Components(component::ComponentCommand),
+
+    /// Manage icons
+    #[clap(name = "icons")]
+    //#[clap(subcommand)]
+    Icons(icons::IconCommand),
 }
 
 #[allow(clippy::large_enum_variant)]
