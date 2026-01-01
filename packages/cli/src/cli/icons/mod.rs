@@ -3,6 +3,8 @@ use serde::Serialize;
 use std::path::PathBuf;
 use crate::{Result, StructuredOutput};
 
+mod tui;
+
 #[derive(Clone, Debug, Parser)]
 #[command(name = "icons")]
 pub struct IconCommand {
@@ -57,6 +59,7 @@ impl IconCommand {
 
             None => {
                 // terminal icon browser (tui)
+                tui::tui_main()?;
             }
         }
 
