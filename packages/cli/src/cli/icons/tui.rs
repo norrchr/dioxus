@@ -1,5 +1,5 @@
 use crossterm::{event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind}, execute, terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode}};
-use ratatui::{prelude::*, widgets::{Block, Borders, Paragraph}};
+use ratatui::{prelude::*, widgets::{Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState}};
 use crate::Result;
 use std::time::Duration;
 
@@ -7,6 +7,7 @@ pub(crate) struct App {
     pub(crate) search: Search,
     pub(crate) screen: Screen,
     pub(crate) focus: Focus,
+    pub(crate) collection_state: State,
 }
 
 const COLLECTION_TILE_WIDTH: u16 = 30;
@@ -21,6 +22,7 @@ impl App {
             search: Search::default(),
             screen: Screen::default(),
             focus: Focus::default(),
+            collection_state: State::default(),
         }
     }
 }
@@ -32,6 +34,14 @@ pub(crate) struct Search {
     area: Rect,
     /// The current search query
     query: String,
+}
+
+#[derive(Default, PartialEq)]
+pub(crate) struct State {
+    selected_idx: Option<usize>,
+    total_rows: usize,
+    scroll_offset: usize,
+    scroll: ScrollbarState,
 }
 
 /// The screen to display
@@ -88,8 +98,32 @@ fn run_app<B: ratatui::backend::Backend>(
                 if let Event::Mouse(mouse) = event {
                     match mouse.kind {
                         MouseEventKind::Down(_) => {}, // TODO: handle mouse click
-                        MouseEventKind::ScrollUp => {}, // TODO: handle mouse scroll
-                        MouseEventKind::ScrollDown => {}, // TODO: handle mouse scroll
+                        MouseEventKind::ScrollDown => {
+                            match app.focus {
+                                Focus::Content | Focus::Sidebar => match app.screen {
+                                    Screen::Collection => {
+                                        app.collection_state.scroll_offset = app.collection_state.scroll_offset.saturating_add(1).min(app.collection_state.total_rows);
+                                        app.collection_state.scroll.next();
+                                    },
+                                    _ => {},
+                                },
+                                _ => {},
+                            }
+                        },
+                        MouseEventKind::ScrollUp => {
+                            match app.focus {
+                                Focus::Content | Focus::Sidebar => {
+                                    match app.screen {
+                                        Screen::Collection => {
+                                            app.collection_state.scroll_offset = app.collection_state.scroll_offset.saturating_sub(1);
+                                            app.collection_state.scroll.prev();
+                                        },
+                                        _ => {},
+                                    }
+                                }
+                                _ => {},
+                            }
+                        },
                         _ => {},
                     }
                 }
@@ -244,37 +278,114 @@ fn render_search(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_collection_screen(f: &mut Frame, area: Rect, app: &mut App) {
-    let style = if app.focus == Focus::Content {
+    /*let style = if app.focus == Focus::Content {
         Style::default().fg(Color::Yellow)
     } else {
         Style::default().fg(Color::Gray)
+    };*/
+
+    let border_type = if app.focus == Focus::Content {
+        BorderType::Double
+    } else {
+        BorderType::default()
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(border_type)
         .title(" Select Icon Collection ")
-        .style(style);
-
-    let inner = block.inner(area);
-
-    // number of columns to display per row, taking into account the width of the viewport
-    let num_cols = (inner.width / COLLECTION_TILE_WIDTH).max(1) as usize;
-    // number of rows to display, taking into account the height of the viewport
-    let num_rows = (inner.height / COLLECTION_TILE_HEIGHT) as usize;
-
-    // TODO: 
-    // implement scroll
-    // calculate the start_row from scroll offset
-    // calculate total number of required rows 
-    // calculate the end_row
-
-    // start_row..end_row are the visible rows to render to the viewport
-    // calculate the starting index from current row and current column to render the visible tiles
-
-    // if possible, use the built-in Layout engine to create the grid with constraints
+        .style(Style::default().fg(Color::DarkGray));
 
     f.render_widget(block, area);
+
+    let grid_area = area.inner(Margin { horizontal: 1, vertical: 1 });
+
+    // for testing/debugging
+    let mut collections: Vec<String> = Vec::new();
+    for i in 0..20 {
+        collections.push(format!("Collection {}", i+1));
+    }
+
+    // number of columns to display per row, taking into account the width of the viewport
+    let cols_per_row = (grid_area.width / COLLECTION_TILE_WIDTH).max(1) as usize;
+    // number of rows to display, taking into account the height of the viewport
+    let rows_in_viewport = (grid_area.height / COLLECTION_TILE_HEIGHT) as usize;
+
+    //let start_row = app.collection_state.scroll_offset / cols_per_row;
+    let start_row = app.collection_state.scroll_offset;
+    let total_rows = collections.len().div_ceil(cols_per_row);
+    let end_row = (start_row + rows_in_viewport + 1).min(total_rows);
+
+    let mut row_constraints = Vec::with_capacity(rows_in_viewport);
+    for _ in 0..rows_in_viewport {
+        row_constraints.push(Constraint::Length(COLLECTION_TILE_HEIGHT));
+    }
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(row_constraints)
+        .split(grid_area);
+
+    let selected_idx = app.collection_state.selected_idx;
+
+    for (row_idx, row_rect) in rows.into_iter().enumerate() {
+        let row = start_row + row_idx;
+
+        let mut col_constraints = Vec::with_capacity(cols_per_row);
+        for _ in 0..cols_per_row {
+            col_constraints.push(Constraint::Length(COLLECTION_TILE_WIDTH));
+        }
+
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(col_constraints)
+            .split(*row_rect);
+
+        for (col_idx, col_rect) in cols.into_iter().enumerate() {
+            let index = row * cols_per_row + col_idx;
+
+            if index >= collections.len() {
+                break;
+            }
+
+            let label = &collections[index];
+
+            let (border_type, border_style) = if (selected_idx.is_none() && index == 0) || selected_idx == Some(index) {
+                (BorderType::Double, Style::default().fg(Color::Yellow))
+            } else {
+                (BorderType::default(), Style::default().fg(Color::Gray))
+            };
+
+            f.render_widget(
+                Block::default()
+                    .title(label.clone())
+                    .title_style(Style::default().red())
+                    .borders(Borders::ALL)
+                    .border_style(border_style)
+                    .border_type(border_type),
+                *col_rect,
+            );
+        }
+    }
+
+    app.collection_state.total_rows = total_rows;
+    app.collection_state.scroll = app.collection_state.scroll.content_length(total_rows).viewport_content_length(rows_in_viewport).position(start_row);
+
+    //f.render_widget(block, area);
+
+    f.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("↑"))
+            .end_symbol(Some("↓")),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }
+        ),
+        &mut app.collection_state.scroll,
+    );
 }
+
 fn render_icon_screen(f: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
