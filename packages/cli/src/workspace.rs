@@ -1,3 +1,4 @@
+use crate::icons::IconRegistry;
 use crate::styles::GLOW_STYLE;
 use crate::CliSettings;
 use crate::Result;
@@ -592,6 +593,11 @@ impl Workspace {
         }
         let hash = hasher.finish();
         Self::component_cache_dir().join(format!("{hash:016x}"))
+    }
+
+    /// The path where git icon registries are cached
+    pub(crate) fn icon_registry_cache_dir() -> PathBuf {
+        Self::dioxus_data_dir().join("icons")
     }
 }
 
