@@ -1,4 +1,4 @@
-use crate::config::component::ComponentConfig;
+use crate::config::{component::ComponentConfig, icon::IconConfig};
 
 use super::*;
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,9 @@ pub(crate) struct DioxusConfig {
 
     #[serde(default)]
     pub(crate) components: ComponentConfig,
+
+    #[serde(default)]
+    pub(crate) icons: IconConfig,
 }
 
 impl Default for DioxusConfig {
@@ -60,6 +63,7 @@ impl Default for DioxusConfig {
             },
             bundle: BundleConfig::default(),
             components: ComponentConfig::default(),
+            icons: IconConfig::default(),
         }
     }
 }
