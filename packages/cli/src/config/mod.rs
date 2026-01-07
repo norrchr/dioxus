@@ -2,6 +2,7 @@ mod app;
 mod bundle;
 mod component;
 mod dioxus_config;
+mod icon;
 mod serve;
 mod web;
 
