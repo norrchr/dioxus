@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use git2::{FetchOptions, Repository, build::RepoBuilder};
 use serde::{Serialize, Deserialize};
-use std::path::PathBuf;
+use std::{collections::{HashMap, HashSet}, path::PathBuf};
 use crate::{DioxusConfig, Result, StructuredOutput, Workspace};
 
 mod tui;
@@ -68,11 +68,95 @@ impl IconCommand {
     }
 
     async fn add_icons(args: IconArgs, force: bool) -> Result<()> {        
-        todo!()
+        let config = Self::resolve_config().await?;
+        let mut icons_to_add: HashMap<String, HashMap<String, HashSet<String>>> = HashMap::new();
+        let mut icon_count = 0;
+
+        for icon in args.icons {
+            // Format: @registry:library:list-of-icons...
+            let parsed_icon = Self::parse_icon_identifier(icon)?;
+            
+            let registry = if let Some(r) = parsed_icon.registry {
+                Some(r) 
+            } else if let Some(r) = &args.registry {
+                Some(r.clone())
+            } else {
+                None
+            };
+
+            let resolved_registry_name = IconRegistry::resolve_name(registry.as_deref(), &config)?;
+            icon_count += parsed_icon.icons.len();
+
+            icons_to_add
+                .entry(resolved_registry_name)
+                .or_insert(HashMap::new())
+                .entry(parsed_icon.library)
+                .or_insert(HashSet::new())
+                .extend(parsed_icon.icons);
+        }
+
+        println!("Parsed {} icon(s) across {} registries and {} libraries", icon_count, icons_to_add.len(), icons_to_add.values().map(|v| v.len()).sum::<usize>());
+
+        let mut resolved_registry_paths = HashMap::new();
+
+        // resolve the registry paths
+        for registry in icons_to_add.keys() {
+            println!("Resolving registry '{}'...", registry);
+            resolved_registry_paths.insert(registry, IconRegistry::resolve(Some(registry), &config)?);
+        }
+
+        // Todo:
+        // - check if provided icon names exist in their respective registries
+        // - process icon data from registry
+        // - write the icon data out to the managed icon module
+
+        // managed icon module structure
+        // src/icons/mod.rs - top level module for all icons (exports registeries)
+        // src/icons/registry/mod.rs - top level registry module (exports libraries)
+        // src/icons/registry/library/mod.rs - top level library module (exports icons)
+        // src/icons/registry/library/name.rs - module per icon
+
+        Ok(())
     }
 
     async fn remove_icons(args: IconArgs) -> Result<()> {
         todo!()
+    }
+
+    fn parse_icon_identifier(input: String) -> Result<IconIdentifier> {
+        let mut parts = input.split(':').collect::<Vec<_>>();
+        let mut registry = None;
+        
+        if parts.len() == 3 {
+            if let Some(reg) = parts[0].strip_prefix("@") {
+                let reg = reg.trim();
+                if reg.is_empty() {
+                    return Err(anyhow::anyhow!("Empty registry name. Expected [@registry:]library:list-of-icons, got '{}'", input))
+                }
+                registry = Some(reg.to_string());
+            } else {
+                return Err(anyhow::anyhow!("Registry must start with '@', got '{}'", parts[0]))
+            }
+
+            parts = parts[1..].to_vec();
+        }
+
+        if parts.len() == 2 {
+            let library = parts[0].trim().to_string();
+            let icons = parts[1].split(",").map(|i| i.trim().to_string()).filter(|i| !i.is_empty()).collect::<Vec<_>>();
+
+            if library.is_empty() || icons.is_empty() {
+                return Err(anyhow::anyhow!("Empty library and/or icon list. Expected [@registry:]library:list-of-icons, got '{}'", input))
+            }
+
+            return Ok(IconIdentifier {
+                registry,
+                library,
+                icons
+            })
+        }
+
+        Err(anyhow::anyhow!("Invalid icon identifier. Expected [@registry:]library:list-of-icons, got '{}'", input))
     }
 
     /// Load the config
@@ -85,6 +169,13 @@ impl IconCommand {
             .load_dioxus_config(crate_package)?
             .unwrap_or_default())
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct IconIdentifier {
+    pub registry: Option<String>,
+    pub library: String,
+    pub icons: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -117,6 +208,16 @@ impl IconRegistry {
     /// Check if the supplied name is the built-it default registry name
     pub fn is_default_name(name: &str) -> bool {
         name == "iconify"
+    }
+
+    pub fn resolve_name(name: Option<&str>, config: &DioxusConfig) -> Result<String> {
+        if let Some(name) = name.filter(|n| !Self::is_default_name(n))  {
+            return Ok(name.to_string())
+        } else if let Some(default) = config.icons.default.as_deref().filter(|d| !Self::is_default_name(d)) {
+            return Ok(default.to_string())
+        } else {
+            return Ok("iconify".to_string())
+        }        
     }
 
     /// Resolve the path to the icon registry, cloning the remote registry if needed
