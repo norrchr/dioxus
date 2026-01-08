@@ -84,7 +84,7 @@ impl IconCommand {
                 None
             };
 
-            let resolved_registry_name = IconRegistry::resolve_name(registry.as_deref(), &config)?;
+            let resolved_registry_name = IconRegistry::resolve_valid_name(registry.as_deref(), &config)?;
             icon_count += parsed_icon.icons.len();
 
             icons_to_add
@@ -205,33 +205,50 @@ impl Default for IconRegistry {
 }
 
 impl IconRegistry {
-    /// Check if the supplied name is the built-it default registry name
+    /// Check if the supplied name is the built-in global registry name
     pub fn is_default_name(name: &str) -> bool {
         name == "iconify"
     }
 
-    pub fn resolve_name(name: Option<&str>, config: &DioxusConfig) -> Result<String> {
-        if let Some(name) = name.filter(|n| !Self::is_default_name(n))  {
+    /// Resolve the provided name to a registry name, checking if it's a valid entry in the config
+    pub fn resolve_valid_name(name: Option<&str>, config: &DioxusConfig) -> Result<String> {
+        let name = Self::resolve_name(name, config);
+
+        if Self::is_default_name(&name) || config.icons.registeries.contains_key(&name) {
             return Ok(name.to_string())
-        } else if let Some(default) = config.icons.default.as_deref().filter(|d| !Self::is_default_name(d)) {
-            return Ok(default.to_string())
-        } else {
-            return Ok("iconify".to_string())
-        }        
+        }
+        
+        Err(anyhow::anyhow!("Icon registry '{}' does not exist in the config", name))
+    }
+
+    /// Resolve the provided name to a registry name (does not check if it's a valid entry in the config)
+    pub fn resolve_name(name: Option<&str>, config: &DioxusConfig) -> String {
+        // If a name is provided, and it's not the global default, use it
+        if let Some(name) = name.filter(|n| !Self::is_default_name(n))  {
+            return name.to_string()
+        }
+        
+        // If the config has a default, and it's not the global default, use it
+        if let Some(default) = config.icons.default.as_deref().filter(|d| !Self::is_default_name(d)) {
+            return default.to_string()
+        }
+
+        // Otherwise use the global default registry name
+        return "iconify".to_string()
     }
 
     /// Resolve the path to the icon registry, cloning the remote registry if needed
     pub fn resolve(name: Option<&str>, config: &DioxusConfig) -> Result<PathBuf> {
-        let (name, registry) = if let Some(name) = name.filter(|n| !Self::is_default_name(n))  {
-            (name, config.icons.registeries.get(name).cloned())
-        } else if let Some(default) = config.icons.default.as_deref().filter(|d| !Self::is_default_name(d)) {
-            (default, config.icons.registeries.get(default).cloned())
+        let name = Self::resolve_name(name, config);
+        
+        let registry = if Self::is_default_name(&name) {
+            Some(config.icons.registeries.get(&name).cloned().unwrap_or_default())
         } else {
-            ("iconify", Some(config.icons.registeries.get("iconify").cloned().unwrap_or_default()))
+            config.icons.registeries.get(&name).cloned()
         };
 
         if let Some(registry) = registry {
-            let path = registry.path.unwrap_or_else(|| Workspace::icon_registry_cache_dir().join(name));
+            let path = registry.path.unwrap_or_else(|| Workspace::icon_registry_cache_dir().join(&name));
 
             if !path.exists() {
                 if let Some(git) = &registry.git {
@@ -239,14 +256,14 @@ impl IconRegistry {
                     Self::clone(&git, registry.rev.as_deref(), registry.depth, &path)?;
                     return Ok(path)
                 } else {
-                    return Err(anyhow::anyhow!("Icon registry path for '{}' does not exist at: {}", name, path.display()))
+                    return Err(anyhow::anyhow!("Icon registry path for '{}' does not exist at: {}", &name, path.display()))
                 }
             } else {
                 return Ok(path)
             }
         }
 
-        return Err(anyhow::anyhow!("Could not resolve icon registry named '{}'", name))
+        Err(anyhow::anyhow!("Icon registry '{}' does not exist in the config", &name))
     }
 
     /// Clone an icon registry from the given git url to the given destination
