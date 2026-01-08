@@ -97,10 +97,29 @@ impl IconCommand {
 
         println!("Parsed {} icon(s) across {} registries and {} libraries", icon_count, icons_to_add.len(), icons_to_add.values().map(|v| v.len()).sum::<usize>());
 
-        // Todo:
-        // - check if provided icon names exist in their respective registries
-        // - process icon data from registry
-        // - write the icon data out to the managed icon module
+        for (registry, libraries) in icons_to_add.iter() {
+            println!("Resolving registry '{}'...", registry);
+            let registery_path = IconRegistry::resolve(Some(registry), &config)?;
+            let collection_path = registery_path.join("json");
+
+            for (library, icons) in libraries {
+                let collection_file = collection_path.join(format!("{}.json", library.to_lowercase()));
+
+                if !collection_file.exists() {
+                    return Err(anyhow::anyhow!("Invalid library. Library '{}' not found in registry '{}'", library, registry));
+                }
+
+                let fd = std::fs::File::open(&collection_file)?;
+                let reader = std::io::BufReader::new(fd);
+                let collection: serde_json::Value = serde_json::from_reader(reader)?;
+
+                // Todo:
+                // parse collection file into typed struct instead of Value
+                // check if provided icon names exist
+                // check if icon already exists in the managed icon module (override if --force)
+                // write the icon data out to the managed icon module
+            }
+        }
 
         // managed icon module structure
         // src/icons/mod.rs - top level module for all icons (exports registeries)
