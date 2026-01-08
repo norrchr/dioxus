@@ -97,14 +97,6 @@ impl IconCommand {
 
         println!("Parsed {} icon(s) across {} registries and {} libraries", icon_count, icons_to_add.len(), icons_to_add.values().map(|v| v.len()).sum::<usize>());
 
-        let mut resolved_registry_paths = HashMap::new();
-
-        // resolve the registry paths
-        for registry in icons_to_add.keys() {
-            println!("Resolving registry '{}'...", registry);
-            resolved_registry_paths.insert(registry, IconRegistry::resolve(Some(registry), &config)?);
-        }
-
         // Todo:
         // - check if provided icon names exist in their respective registries
         // - process icon data from registry
